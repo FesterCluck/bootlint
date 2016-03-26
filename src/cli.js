@@ -42,6 +42,26 @@ module.exports = function () {
             }
         };
     }
+    
+    function IsJsonString(str) {
+        try {
+            JSON.parse(str);
+        } catch (e) {
+            return false;
+        }
+        return true;
+    }
+    
+    function arrayUnique(array) {
+        var a = array.concat();
+        for(var i=0; i<a.length; ++i) {
+            for(var j=i+1; j<a.length; ++j) {
+                if(a[i] === a[j])
+                    a.splice(j--, 1);
+            }
+        }
+        return a;
+    }
 
     function handleStdin() {
         return new Deferred(function (resolve) {
@@ -65,7 +85,10 @@ module.exports = function () {
         });
     }
 
-    function handlePath(pattern) {
+    function handlePath(pattern, relax) {
+        var relaxIds = Array.isArray(relax) 
+            ? arrayUnique(disableIds.concat(relax)) 
+            : disabledIds;
         return glob(pattern)
             .map(function (name) {
                 return Deferred.props({
@@ -74,7 +97,7 @@ module.exports = function () {
                 });
             })
             .each(function (file) {
-                bootlint.lintHtml(file.contents, buildReporter(file.name), disabledIds);
+                bootlint.lintHtml(file.contents, buildReporter(file.name), relaxIds);
                 totalFileCount++;
                 return Deferred.resolve();
             });
@@ -85,7 +108,13 @@ module.exports = function () {
     }
 
     program.args.forEach(function (pattern) {
-        lintedFiles.push(pattern === '-' ? handleStdin() : handlePath(pattern));
+        var objPattern = IsJsonString(pattern) ? JSON.parse(pattern) : null;
+        lintedFiles.push(pattern === '-'
+            ? handleStdin() 
+            : objPattern && objPattern.pattern && typeof objPattern.pattern == "string"
+                ? handlePath(objPattern.pattern, Array.isArray(objPattern.relax) ? objPattern.relax : [])
+                : handlePath(pattern)
+        );
     });
 
     Deferred.all(lintedFiles).then(function () {
